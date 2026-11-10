@@ -1,9 +1,9 @@
-// index.js - Sadece Cam-Only Kontrolü (Render Uyumlu)
+// index.js - Sadece Cam-Only Kontrolü (En Temiz Hali)
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 
-// --- Web Sunucusu (Render uyku modunu engellemek için) ---
+// --- Render İçin Web Sunucusu ---
 const app = express();
 app.get('/', (req, res) => res.send('Bot Aktif!'));
 const PORT = process.env.PORT || 3000;
@@ -13,7 +13,7 @@ app.listen(PORT, () => console.log(`✅ Web sunucusu ${PORT} portunda çalışı
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates // Ses kanalı olayları için gerekli
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
@@ -30,32 +30,30 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const channel = newState.channel;
         const member = newState.member;
 
-        // Kanalın adı tam olarak "cam-only" ise (büyük/küçük harf duyarsız)
+        // Kanalın adı "cam-only" ise
         if (channel.name.toLowerCase() === 'cam-only') {
             
             // 5 saniye bekle
             setTimeout(async () => {
                 try {
-                    // Kullanıcının o anki güncel ses durumunu çek
                     const currentState = member.voice;
                     
-                    // Eğer hala o kanaldaysa ve kamera KAPALIYSA (selfVideo = false)
+                    // Hala o kanaldaysa ve kamera KAPALIYSA
                     if (currentState.channelId === channel.id && !currentState.selfVideo) {
                         
                         // 1. Kullanıcıyı odadan at
                         await member.voice.setChannel(null);
                         
-                        // 2. Sunucudaki "bildirim" adlı metin kanalını bul ve mesaj at
+                        // 2. Bildirim kanalını bul ve mesaj at
                         const logChannel = channel.guild.channels.cache.find(c => c.name === 'bildirim');
                         if (logChannel) {
                             await logChannel.send(`⚠️ <@${member.id}> **cam-only** kanalına girdi ancak 5 saniye içinde kamerasını açmadığı için odadan atıldı.`);
                         }
-                        
                     }
                 } catch (error) {
-                    console.error('Kullanıcı odadan atılamadı (Yetki eksik olabilir):', error);
+                    console.error('Kullanıcı odadan atılamadı (Yetki eksik):', error);
                 }
-            }, 5000); // 5000 ms = 5 saniye
+            }, 5000); // 5 saniye
         }
     }
 });
