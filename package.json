@@ -1,7 +1,6 @@
 {
-  "name": "lion-bot",
+  "name": "kaanbot",
   "version": "1.0.0",
-  "description": "LionBot benzeri calisma botu",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
