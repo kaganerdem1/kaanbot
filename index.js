@@ -31,6 +31,9 @@ if (eksikEnv.length) {
     process.exit(1);
 }
 
+process.on('unhandledRejection', err => console.error('❌ Yakalanmamış hata:', err));
+process.on('uncaughtException', err => console.error('❌ Yakalanmamış istisna:', err));
+
 // ==========================================
 // 2) WEB SUNUCUSU (Render PORT'u zorunlu tutar)
 // ==========================================
@@ -39,15 +42,12 @@ app.get('/', (req, res) => res.send('Bot Aktif!'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ Web sunucusu ${PORT} portunda çalışıyor.`));
 
-process.on('unhandledRejection', err => console.error('❌ Yakalanmamış hata:', err));
-process.on('uncaughtException', err => console.error('❌ Yakalanmamış istisna:', err));
-
 // ==========================================
 // 3) AYARLAR
 // ==========================================
 const AYAR = {
     BILDIRIM_ADI: 'bildirim',
-    KAYIT_ADI: 'calisma-kayit',
+    KAYIT_ADI: 'calisma-kayit',      // bu kanalı elle oluşturun, bot oluşturmaz
     KARSILAMA_ADI: 'welcome-bye',
     GENEL_ADI: 'genel',
     CAM_ONLY: 'cam-only',
@@ -84,7 +84,7 @@ const MOTIVASYON = [
 ];
 
 // ==========================================
-// 4) VERİTABANI MODELLERİ
+// 4) VERİTABANI MODELLERİ (süreler saniye)
 // ==========================================
 const userSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
@@ -139,7 +139,7 @@ const warningSchema = new mongoose.Schema({
 const Warning = mongoose.model('Warning', warningSchema);
 
 // ==========================================
-// 5) MONGODB BAĞLANTISI (ayrı loglu)
+// 5) MONGODB BAĞLANTISI
 // ==========================================
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ MongoDB bağlantısı başarılı.'))
@@ -157,6 +157,12 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
     ],
 });
+
+client.on('warn', m => console.warn('⚠️ Discord uyarı:', m));
+client.on('error', err => console.error('❌ Discord istemci hatası:', err.message));
+client.on('shardError', err => console.error('❌ Shard hatası:', err.message));
+client.on('shardReconnecting', id => console.log(`🔄 Shard ${id} yeniden bağlanıyor...`));
+client.on('shardDisconnect', (e, id) => console.error(`❌ Shard ${id} koptu, kod: ${e?.code}`));
 
 // ==========================================
 // 7) YARDIMCI FONKSİYONLAR
@@ -205,6 +211,7 @@ async function rolGarantile(guild, ad, renk) {
     return guild.roles.create({ name: ad, color: renk, reason: 'Bot otomatik rol' });
 }
 
+// Var olan kanala gönderir. Kanal yoksa oluşturmaz, sessizce atlar.
 async function gonder(guild, ad, payload) {
     try {
         const kanal = await kanalBul(guild, ad);
@@ -441,7 +448,7 @@ async function liderlikGorseli(tur, guild) {
 }
 
 // ==========================================
-// 9) SUNUCU KURULUMU VE SLASH KOMUTLARI
+// 9) SLASH KOMUTLARI VE SUNUCU KURULUMU
 // ==========================================
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
@@ -528,7 +535,6 @@ async function sunucuyuKur(guild) {
     await komutlariKaydet(guild.id);
 
     try {
-        // calisma-kayit bilerek burada yok. Kullanıcı elle oluşturur.
         await kanalGarantile(guild, AYAR.BILDIRIM_ADI);
         await kanalGarantile(guild, AYAR.KARSILAMA_ADI);
         await kanalGarantile(guild, AYAR.GENEL_ADI);
@@ -568,9 +574,6 @@ client.once('clientReady', async () => {
 client.on('guildCreate', async guild => {
     await sunucuyuKur(guild);
 });
-
-client.on('error', err => console.error('❌ Discord istemci hatası:', err.message));
-client.on('shardError', err => console.error('❌ Discord bağlantı hatası:', err.message));
 
 // ==========================================
 // 11) ETKİLEŞİM İŞLEYİCİSİ
@@ -1096,10 +1099,24 @@ cron.schedule('0 22 * * 0', async () => {
 }, zaman);
 
 // ==========================================
-// 18) BAŞLAT
+// 18) DISCORD GİRİŞİ (teşhis loglu)
 // ==========================================
-client.login(process.env.DISCORD_TOKEN).catch(err => {
-    console.error('❌ Discord girişi başarısız:', err.message);
-    console.error('   Token yanlış olabilir veya Developer Portal\'da Privileged Intents kapalı olabilir.');
-    process.exit(1);
-});
+const token = (process.env.DISCORD_TOKEN || '').trim();
+console.log(`🔑 Token uzunluğu: ${token.length} | boşluk var mı: ${/\s/.test(process.env.DISCORD_TOKEN || '')}`);
+console.log("⏳ Discord'a giriş deneniyor...");
+
+const watchdog = setTimeout(() => {
+    console.error('❌ 60 sn içinde Discord girişi tamamlanmadı. Ağ erişimi veya token sorunu olabilir.');
+}, 60000);
+
+client.login(token)
+    .then(() => {
+        clearTimeout(watchdog);
+        console.log('✅ Discord login isteği kabul edildi, gateway bağlantısı bekleniyor...');
+    })
+    .catch(err => {
+        clearTimeout(watchdog);
+        console.error('❌ Discord girişi başarısız:', err.message);
+        console.error('   Token yanlışsa Render Environment\'taki DISCORD_TOKEN\'ı yenile.');
+        process.exit(1);
+    });
