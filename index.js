@@ -21,13 +21,12 @@ const cron = require('node-cron');
 const { createCanvas, loadImage } = require('canvas');
 
 // ==========================================
-// 1) ORTAM DEĞİŞKENLERİ KONTROLÜ
+// 1) ORTAM DEĞİŞKENLERİ
 // ==========================================
 const GEREKLI_ENV = ['DISCORD_TOKEN', 'CLIENT_ID', 'MONGO_URI'];
 const eksikEnv = GEREKLI_ENV.filter(k => !process.env[k]);
 if (eksikEnv.length) {
     console.error(`❌ Eksik ortam değişkenleri: ${eksikEnv.join(', ')}`);
-    console.error('   Render → Environment sekmesinden ekleyip Manual Deploy yap.');
     process.exit(1);
 }
 
@@ -35,7 +34,7 @@ process.on('unhandledRejection', err => console.error('❌ Yakalanmamış hata:'
 process.on('uncaughtException', err => console.error('❌ Yakalanmamış istisna:', err));
 
 // ==========================================
-// 2) WEB SUNUCUSU (Render PORT'u zorunlu tutar)
+// 2) WEB SUNUCUSU (Render için)
 // ==========================================
 const app = express();
 app.get('/', (req, res) => res.send('Bot Aktif!'));
@@ -47,7 +46,7 @@ app.listen(PORT, () => console.log(`✅ Web sunucusu ${PORT} portunda çalışı
 // ==========================================
 const AYAR = {
     BILDIRIM_ADI: 'bildirim',
-    KAYIT_ADI: 'calisma-kayit',      // bu kanalı elle oluşturun, bot oluşturmaz
+    KAYIT_ADI: 'calisma-kayit',      // bu kanalı elle oluşturun
     KARSILAMA_ADI: 'welcome-bye',
     GENEL_ADI: 'genel',
     CAM_ONLY: 'cam-only',
@@ -64,9 +63,9 @@ const AYAR = {
     SPAM_LIMIT: 5,
     SPAM_SURE_MS: 5000,
     SPAM_CEZA_MS: 5 * 60 * 1000,
+    AKTARIM_KEY: 'eski-saat-verisi-v2', // bu anahtar bir kez yazılınca aktarım tekrar çalışmaz
 };
 
-// Küçük harfle yaz. Kendi kelimelerini ekle.
 const KUFUR_LISTESI = ['ornekkufur1', 'ornekkufur2'];
 
 const MARKET = [
@@ -84,7 +83,264 @@ const MOTIVASYON = [
 ];
 
 // ==========================================
-// 4) VERİTABANI MODELLERİ (süreler saniye)
+// 4) ESKİ SAAT VERİSİ (tek seferlik aktarım)
+// Format: [userId, saat, displayName]
+// ==========================================
+const ESKI_VERI = [
+    ['407985263604662272', 6333.3, '✞⚕MED'],
+    ['776755849782624266', 4207.7, 'MEDcram'],
+    ['352482828820152321', 3253.5, 'Zaquastix'],
+    ['381153228902891520', 3072.2, 'Loister'],
+    ['1125719040065814528', 2813.7, 'miri'],
+    ['1304483866848792598', 2784.7, 'F'],
+    ['234358747865153537', 2714.4, 'Krautroller Ψ'],
+    ['586821233153409034', 2527.9, 'Emmergency Doctor'],
+    ['454147736963383316', 2472.6, 'アレハンドロ'],
+    ['1099423711884488806', 2312.9, 'Chantal | Watch Me Succeed'],
+    ['897550814497886279', 2280.2, 'La passion des études'],
+    ['911322132951212073', 2229.5, '9raya SFERRRR kbir'],
+    ['813363145312829451', 2138.7, 'Tahereh'],
+    ['1050372046636449832', 2037.4, 'SENKU'],
+    ['716624831910641695', 1836, 'annmurielle | law'],
+    ['718462416727572520', 1758.2, 'lim~~'],
+    ['383678329112363009', 1625.5, 'Olibo'],
+    ['876493596205940786', 1419.6, '𝒥ℴℴ𝒳'],
+    ['862268285726097408', 1387.5, 'sapelfoel'],
+    ['1045042956450664508', 1380.6, '0.0083'],
+    ['515236869156634636', 1255.3, 'MłZØ'],
+    ['1167525465150476311', 1205.4, 'Cardiology killed me 💀'],
+    ['751301714442846229', 1188.5, 'cxdrn'],
+    ['394646928861954048', 1095.8, 'studypassion'],
+    ['871840088533893170', 1091, 'Lasss'],
+    ['763094794476978216', 842.1, 'Dr. EMMA'],
+    ['1451568663474737246', 755.4, 'Malk'],
+    ['981975900566487100', 728.1, 'Taif med'],
+    ['508602053980061727', 670.7, 'Last survivor.'],
+    ['224060219540373505', 662.8, 'Challenger mentalitates'],
+    ['523137665718288386', 643.7, 'slider man'],
+    ['697281170550816839', 615.7, 'Lau'],
+    ['1112390428197666888', 613, 'V'],
+    ['975891016139808839', 572.9, 'Tout va bien /Med'],
+    ['282639365098700800', 567.1, 'meBrainRot :('],
+    ['1340019379689095341', 550.8, 'Aseel'],
+    ['1172925890334838839', 540.3, 'Buse'],
+    ['774618032697638922', 534.1, 'ARCHOU'],
+    ['683776029994778651', 529.1, 'P(aquastix)'],
+    ['1077239656460058654', 522.1, 'noor | software_eng'],
+    ['818158192466329610', 483.8, null],
+    ['800795913467199539', 481.8, '🕊 analysis paralysis'],
+    ['726565665074446346', 404.7, null],
+    ['793098682593312798', 403.2, 'Aymen'],
+    ['1168248570684653642', 381.2, 'väsby'],
+    ['421097004463030273', 369.5, 'Stefa / 22th July exam'],
+    ['774665669492998144', 363.7, 'Jayzxyk'],
+    ['1132039900515020810', 301.6, 'thiziri 🌚'],
+    ['1151766417063034890', 301.5, 'ZaZu | Med Lab'],
+    ['432826481501274123', 281, 'Nik-IT Guy'],
+    ['1124392518973407312', 275.2, 'Dado'],
+    ['175957908893335552', 265.3, null],
+    ['287330235345666052', 243.3, 'Kin'],
+    ['300739581521690625', 238.5, 'Anakinra'],
+    ['783450655661490236', 238, 'Hamtaro'],
+    ['771820713711632426', 219.9, 'Future Doctor'],
+    ['1072165159734349876', 206.7, 'Salsabil 8h/?'],
+    ['1170223222864740382', 205.1, 'Mo | med'],
+    ['967432034240856085', 204.4, 'Manel RAZALI'],
+    ['773161111998300172', 193.1, 'moh'],
+    ['872376987690344458', 181.8, 'engi'],
+    ['936542368453263382', 166.9, 'Kin'],
+    ['700044029697458256', 161, null],
+    ['768494868539375656', 160.5, 'sab'],
+    ['1185640303210795089', 146.1, 'S'],
+    ['746437143873978470', 142.8, 'sheep it!'],
+    ['1470587329801359543', 136.7, 'n'],
+    ['332482487148216324', 135.1, 'NullPointerException'],
+    ['688405021703798847', 128.7, 'nicosantos_'],
+    ['781632632558714881', 124, 'solitaireaddicted'],
+    ['725681979324104714', 121.6, 'MKH'],
+    ['480490969188401153', 118.3, 'Rd'],
+    ['866769831885275186', 118.1, 'M/PED'],
+    ['819539883454234634', 102.6, 'faty'],
+    ['1000033731454713978', 90, 'Almasah'],
+    ['1382097104645787720', 89.4, '8o8'],
+    ['887459831030624256', 69.9, 'mrkennedi'],
+    ['932353443434213396', 66.5, null],
+    ['766050769656741888', 65.1, 'imane_ezz'],
+    ['1340023711243309106', 61.4, 'Jana'],
+    ['740715348831240242', 55.4, null],
+    ['692706382830370888', 55, 'Aly | Virologist 🦠🧬🔬'],
+    ['1498393795924856884', 54, 'D-56'],
+    ['1260742211671166978', 48.3, '!     ℳ'],
+    ['406889231504637953', 47.7, 'jusdepomme1'],
+    ['1282852018590974044', 44.9, 'Mezi'],
+    ['511195089071112203', 44.7, 'Iman'],
+    ['1359480216208281613', 44.6, null],
+    ['722463670445146122', 44, 'Dr.Ahmed El-beltagy 🇪🇬 🇵🇸'],
+    ['694477683177947227', 43.9, 'gali.leonie'],
+    ['1161008684101533737', 41.3, 'Study now, be proud later!'],
+    ['1233677499905343512', 40.9, 'onlytot'],
+    ['983002343006142514', 38.8, 'rokaya5138'],
+    ['758651308797460491', 37.8, 'Omar'],
+    ['796634545139089439', 36.9, 'clindamycin_.'],
+    ['415198418391138307', 35.6, 'Salah akh'],
+    ['1034905911430500424', 33.7, 'ahmedabdaleem'],
+    ['743218842183925780', 31.8, 'Mehdiiiiiii'],
+    ['1036049399597506622', 29.3, 'Portogas D Ace'],
+    ['1365026101218246749', 26, 'Ines'],
+    ['717563234286043176', 25.7, null],
+    ['903064782607892520', 25.7, null],
+    ['652119051128143882', 24, 'itznwll'],
+    ['1067852753013059584', 23.4, null],
+    ['494018881569030154', 23.2, '𝙻𝚎𝚗𝚒 | Telecom'],
+    ['1049753004313677874', 23.1, 'far.13'],
+    ['711101416206368768', 22.5, null],
+    ['928404119469838337', 22.1, 'tranquilxeno'],
+    ['972199884730028053', 21.1, 'y8sl3x.p11'],
+    ['706474742961668126', 20.2, 'Meynella'],
+    ['453578406420938763', 19.1, null],
+    ['766638049521172500', 18.6, '_melisa_'],
+    ['1187623343722074165', 18.4, 'blue_cheez🍉'],
+    ['585452550195773450', 18, 'saynt |'],
+    ['773503169509589013', 18, null],
+    ['1307107258773143626', 17.9, 'FINALS I محمد'],
+    ['1296552578984972340', 17.7, null],
+    ['926965669038293062', 16, 'Blessed/ MED Peds'],
+    ['786492825490554891', 14, null],
+    ['748152510258348085', 13.4, 'm_khxn4'],
+    ['262278992596434946', 13.3, null],
+    ['1239496877754552411', 13, 'serine0751'],
+    ['1518524921800560677', 11.8, 'FF2'],
+    ['1241789132523442278', 11.6, 'sherook25'],
+    ['1168587533773439107', 11.5, null],
+    ['805097559580082186', 11.1, 'aiden__2020'],
+    ['843174547683672064', 10.9, '.shinon._.'],
+    ['1152478082771468380', 10.8, 'spidfi'],
+    ['1512886148194898050', 10.7, 'Sabriiine'],
+    ['1115040752825811014', 10.6, 'Jassmine'],
+    ['1407087636698497177', 10.5, 'halosha'],
+    ['715701620754743367', 10.4, null],
+    ['830011356258369578', 10.3, '.A.N.D.R.O.S.K.O.T.S'],
+    ['453737913688129536', 9.4, 'Reeck_A49'],
+    ['315999773192880130', 8.6, 'sulfl'],
+    ['949633712486764565', 8.3, 'Besmala'],
+    ['345314408823783426', 7.7, 'lauralbumine'],
+    ['704112251660927097', 7.7, null],
+    ['886092098233835520', 7.6, 'loudsirens'],
+    ['716862856556970065', 6.7, '_.ahmedtsu'],
+    ['889953903284723772', 6.7, 'afya7'],
+    ['1196614731625136190', 6.6, null],
+    ['592340867071606794', 6.5, 'ℝoωαη'],
+    ['956441943796236332', 6.5, 'Igni'],
+    ['1143563251330850958', 6.2, 'Luffy'],
+    ['1204484294182178896', 6, 'Miwa'],
+    ['611290385838374987', 5.6, '𝓐𝓱𝓶𝓪𝓭'],
+    ['332311757366231042', 5.5, null],
+    ['1339663325126201354', 5.5, 'Ismail chakiry'],
+    ['720650325354086422', 5.4, 'Swinky'],
+    ['1192840845947310200', 5.2, 'ffadoua'],
+    ['1261788129652772894', 5.2, 'rymsab'],
+    ['1453536808880312335', 4.8, 'Mila'],
+    ['695599755606097981', 4.6, null],
+    ['541168284217901056', 4.4, 'Denis :)  -  [management exam]'],
+    ['1071481833876897885', 4.2, 'nyxrmtascpi'],
+    ['1384671644945223711', 4.2, 'Ramaaa'],
+    ['1479588320546918573', 3.9, 'Consistentitis'],
+    ['709014020073455649', 3.8, 'Assa'],
+    ['1458200046213267487', 3.8, 'DUHA'],
+    ['922553082024431636', 3.7, '-DNA'],
+    ['1526422669489344654', 3.7, '𝗙𝗥𝗢𝗟𝗬 𝘀𝘁𝘂𝗱𝗶𝗼 🐸'],
+    ['764603683744645131', 3.6, null],
+    ['321829342692900864', 3.5, null],
+    ['1090603684993450074', 3.4, 'af.co83'],
+    ['764210222155563021', 3.3, null],
+    ['1452012431399325859', 3.3, null],
+    ['778609496423137320', 3.2, 'Ali7dr.'],
+    ['1324490598865961154', 3.2, 'l9q_w'],
+    ['1510992841512452311', 3.2, '𝒥ℴℴ𝒳'],
+    ['1300813745986994226', 2.8, null],
+    ['815154370240577536', 2.4, 'u.l2'],
+    ['985068081636315136', 2.3, 'lokiii | exam tom'],
+    ['330043632579248129', 1.8, '.ahmed._'],
+    ['575339422862671874', 1.7, 'Hashem'],
+    ['1056631108919377972', 1.7, null],
+    ['1313907308111204492', 1.7, 'shahrzad'],
+    ['472396483040116759', 1.6, 'Jad'],
+    ['1053748505786720347', 1.6, null],
+    ['1225298380834734163', 1.5, null],
+    ['1286694887688769566', 1.5, 'yagamii1'],
+    ['436912833867939840', 1.4, null],
+    ['669981101263159296', 1.4, null],
+    ['933001107783942164', 1.4, 'chaymaes'],
+    ['1234450023014596678', 1.3, 'Salim Asigma'],
+    ['1240475020728209458', 1.3, 'afia220'],
+    ['379970762599038978', 1.2, 'Chicken Nuggie'],
+    ['949263142154813491', 1.2, 'Lama'],
+    ['1049889835122442363', 1.2, 'iftekhar3496'],
+    ['829780179022905395', 1.1, '♾️'],
+    ['1132435451001700372', 1.1, 'brenokid'],
+    ['506508682633412614', 1, 'batoubatou'],
+    ['1136250205466021988', 1, null],
+    ['1265257909386739777', 1, 'amine'],
+    ['1283755210434416696', 1, 'asmaa00956'],
+    ['354224531256377344', 0.9, null],
+    ['1492965648383610892', 0.8, 'حسن كوبايه 🥃'],
+    ['756444615510327306', 0.7, 'Aphrodite'],
+    ['829707332006969384', 0.7, 'Fully'],
+    ['853025392176660500', 0.7, '☾✰𝕶𝖊𝖙𝖚𝖗𝕾𝖆𝖒☾✰'],
+    ['1200413764978225343', 0.7, null],
+    ['1279187471225196627', 0.7, 'Vinicius senior'],
+    ['564078173709402120', 0.6, 'pollux'],
+    ['896741147949531176', 0.6, null],
+    ['1372676410140917852', 0.6, 'Khadija_wh'],
+    ['397254074883375125', 0.5, null],
+    ['688733026175287369', 0.5, 'ZeyaD'],
+    ['839847895133323306', 0.5, 'Sarah'],
+    ['1054545302490710188', 0.5, 'ANAS AZ'],
+    ['1203833794998829056', 0.5, null],
+    ['735956640968343553', 0.4, null],
+    ['1449676313576210476', 0.4, '𝒮𝒶𝓀𝓊𝓂𝒾'],
+    ['266336803366109184', 0.3, null],
+    ['1174303727847493688', 0.3, '☆'],
+    ['1252633787100041375', 0.3, 'السَّمْهَرِيّ'],
+    ['1294352407626645648', 0.3, null],
+    ['1423059090791338048', 0.3, '✭'],
+    ['352493942417391617', 0.2, null],
+    ['434441805413613568', 0.2, 'ellyne'],
+    ['670555827735887882', 0.2, 'salsani'],
+    ['710686572500090940', 0.2, 'boody0618'],
+    ['754660640907591751', 0.2, 'walidthebatata'],
+    ['937749939373608971', 0.2, 'aytesnim'],
+    ['1250952007846723645', 0.2, 'ammar_81493'],
+    ['1419804867307769998', 0.2, null],
+    ['358361062581469194', 0.1, null],
+    ['360873255898316802', 0.1, 'LeSangDeLaVeine'],
+    ['494496640162332672', 0.1, null],
+    ['693222497029586985', 0.1, null],
+    ['1255947828099022859', 0.1, '_dayoneee'],
+    ['1289668236677480571', 0.1, null],
+    ['1301907027689472101', 0.1, null],
+    ['1525437412875046944', 0.1, 'assilll'],
+    ['1556037772048072815', 0.1, 'sandy'],
+    ['305095502863794177', 0, null],
+    ['701861492093354135', 0, 'ultra_stitious_cinnamus_cookius'],
+    ['706048686131773440', 0, 'nattt'],
+    ['722010017250934804', 0, 'Moon ♡'],
+    ['725544472800264203', 0, 'ahmedsalah0015'],
+    ['760595536154984538', 0, 'lateef5371'],
+    ['812370055865171968', 0, null],
+    ['1065638421512605787', 0, 'Masa miso'],
+    ['1232232155724251218', 0, null],
+    ['1245662193903599661', 0, null],
+    ['1247608688831762604', 0, 'Gurilla'],
+    ['1332732027291701313', 0, null],
+    ['1369931278366937199', 0, 'abderrahim.sar'],
+    ['1405541453530140672', 0, null],
+    ['1451197970774229259', 0, null],
+    ['1464754208388419664', 0, 'logic'],
+];
+
+// ==========================================
+// 5) VERİTABANI MODELLERİ (süreler saniye)
 // ==========================================
 const userSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
@@ -138,9 +394,13 @@ const warningSchema = new mongoose.Schema({
 });
 const Warning = mongoose.model('Warning', warningSchema);
 
-// ==========================================
-// 5) MONGODB BAĞLANTISI
-// ==========================================
+const importLogSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    count: { type: Number, default: 0 },
+    at: { type: Date, default: Date.now },
+});
+const ImportLog = mongoose.model('ImportLog', importLogSchema);
+
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ MongoDB bağlantısı başarılı.'))
     .catch(err => console.error('❌ MongoDB bağlantı hatası:', err.message));
@@ -158,10 +418,7 @@ const client = new Client({
     ],
 });
 
-client.on('warn', m => console.warn('⚠️ Discord uyarı:', m));
 client.on('error', err => console.error('❌ Discord istemci hatası:', err.message));
-client.on('shardError', err => console.error('❌ Shard hatası:', err.message));
-client.on('shardReconnecting', id => console.log(`🔄 Shard ${id} yeniden bağlanıyor...`));
 client.on('shardDisconnect', (e, id) => console.error(`❌ Shard ${id} koptu, kod: ${e?.code}`));
 
 // ==========================================
@@ -211,7 +468,6 @@ async function rolGarantile(guild, ad, renk) {
     return guild.roles.create({ name: ad, color: renk, reason: 'Bot otomatik rol' });
 }
 
-// Var olan kanala gönderir. Kanal yoksa oluşturmaz, sessizce atlar.
 async function gonder(guild, ad, payload) {
     try {
         const kanal = await kanalBul(guild, ad);
@@ -277,8 +533,57 @@ async function calismaEkle(userId, ad, saniye, coin) {
 }
 
 // ==========================================
-// 8) LİDERLİK TABLOSU (resim)
+// 8) TEK SEFERLİK VERİ AKTARIMI
 // ==========================================
+async function eskiVeriyiAktar() {
+    if (await ImportLog.exists({ key: AYAR.AKTARIM_KEY })) {
+        console.log('ℹ️ Eski veri daha önce aktarılmış, atlanıyor.');
+        return;
+    }
+
+    let yazilan = 0;
+    for (const [userId, saat, ad] of ESKI_VERI) {
+        const saniye = Math.round(Number(saat) * 3600);
+        if (!Number.isFinite(saniye) || saniye <= 0) continue;
+
+        await User.findOneAndUpdate(
+            { userId },
+            {
+                $inc: { totalSec: saniye },
+                $setOnInsert: { username: ad || 'Bilinmeyen', balance: 0 },
+            },
+            { upsert: true, setDefaultsOnInsert: true }
+        );
+        yazilan++;
+    }
+
+    await ImportLog.create({ key: AYAR.AKTARIM_KEY, count: yazilan });
+    console.log(`✅ Eski veri aktarıldı: ${yazilan} kişi.`);
+}
+
+// ==========================================
+// 9) LİDERLİK TABLOSU (resim)
+// ==========================================
+
+// Sadece düz metin karakterleri bırakır (süslü Unicode isimler kutu çıkarmasın diye)
+function temizIsim(s) {
+    if (!s) return '';
+    return String(s)
+        .normalize('NFKD')
+        .replace(/\p{M}/gu, '')                              // aksan işaretlerini kaldır
+        .replace(/[^\p{Script=Latin}\p{N} ._\-|']/gu, '')    // sadece Latin harf, rakam, temel işaret
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// Görünecek ad: Discord kullanıcı adı → kayıtlı ad → ID'nin son 4 hanesi
+function gorunenAd(uye, u) {
+    const ad = temizIsim(uye?.user?.username)
+        || temizIsim(u.username)
+        || `Kullanici ${String(u.userId).slice(-4)}`;
+    return ad.slice(0, 18);
+}
+
 function siralamaSorgusu(tur) {
     if (tur === 'haftalik') {
         return { alan: 'weeklySec', filtre: { weekKey: haftaAnahtari(), weeklySec: { $gt: 0 } } };
@@ -362,7 +667,7 @@ async function liderlikGorseli(tur, guild) {
         const img = uye
             ? await avatarYukle(uye.user.displayAvatarURL({ extension: 'png', size: 128 }))
             : null;
-        return { ad: uye?.displayName ?? u.username, img, sure: u[s.alan] };
+        return { ad: gorunenAd(uye, u), img, sure: u[s.alan] };
     }));
 
     const W = 800;
@@ -385,7 +690,7 @@ async function liderlikGorseli(tur, guild) {
 
     ctx.fillStyle = '#DDDDDD';
     ctx.font = '18px sans-serif';
-    ctx.fillText(`SERVEUR : ${guild.name}`, W / 2, 94);
+    ctx.fillText(`SERVEUR : ${temizIsim(guild.name) || 'Sunucu'}`, W / 2, 94);
 
     const podyum = [
         { idx: 1, x: W * 0.22, y: 215, r: 58, renk: '#C0C0C0', etiket: '2ND' },
@@ -414,11 +719,11 @@ async function liderlikGorseli(tur, guild) {
 
         ctx.fillStyle = '#F1C40F';
         ctx.font = 'bold 18px sans-serif';
-        ctx.fillText(kisi.ad.slice(0, 18), p.x, p.y + p.r + 56);
+        ctx.fillText(kisi.ad, p.x, p.y + p.r + 56);
 
         ctx.fillStyle = '#DDDDDD';
         ctx.font = '16px sans-serif';
-        ctx.fillText(`${Math.floor(kisi.sure / 3600)} saat`, p.x, p.y + p.r + 78);
+        ctx.fillText(formatSure(kisi.sure), p.x, p.y + p.r + 78);
     }
 
     for (let i = 3; i < veri.length; i++) {
@@ -437,7 +742,7 @@ async function liderlikGorseli(tur, guild) {
         yuvarlakAvatar(ctx, kisi.img, 110, orta, 20, kisi.ad);
 
         ctx.textAlign = 'left';
-        ctx.fillText(kisi.ad.slice(0, 32), 150, orta);
+        ctx.fillText(kisi.ad, 150, orta);
 
         ctx.textAlign = 'right';
         ctx.font = 'bold 20px sans-serif';
@@ -448,7 +753,7 @@ async function liderlikGorseli(tur, guild) {
 }
 
 // ==========================================
-// 9) SLASH KOMUTLARI VE SUNUCU KURULUMU
+// 10) SLASH KOMUTLARI VE SUNUCU KURULUMU
 // ==========================================
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
@@ -478,9 +783,9 @@ const commandsData = [
         .setDescription('Çalışma liderlik tablosunu gösterir.')
         .addStringOption(o => o.setName('tur').setDescription('Hangi tablo?')
             .addChoices(
+                { name: 'Tüm zamanlar', value: 'toplam' },
                 { name: 'Günlük', value: 'gunluk' },
                 { name: 'Haftalık', value: 'haftalik' },
-                { name: 'Tüm zamanlar', value: 'toplam' },
             )),
 
     new SlashCommandBuilder()
@@ -561,11 +866,18 @@ async function sunucuyuKur(guild) {
 }
 
 // ==========================================
-// 10) DISCORD OLAYLARI
+// 11) DISCORD OLAYLARI
 // ==========================================
 client.once('clientReady', async () => {
     console.log(`🤖 ${client.user.tag} olarak giriş yapıldı! Bot artık online.`);
     client.user.setActivity('🦁 Çalışma modu', { type: 3 });
+
+    try {
+        await eskiVeriyiAktar();
+    } catch (err) {
+        console.error('❌ Eski veri aktarım hatası:', err);
+    }
+
     for (const guild of client.guilds.cache.values()) {
         await sunucuyuKur(guild);
     }
@@ -576,7 +888,7 @@ client.on('guildCreate', async guild => {
 });
 
 // ==========================================
-// 11) ETKİLEŞİM İŞLEYİCİSİ
+// 12) ETKİLEŞİM İŞLEYİCİSİ
 // ==========================================
 client.on('interactionCreate', async interaction => {
     try {
@@ -692,7 +1004,7 @@ async function komutIsle(i) {
 
         case 'leaderboard': {
             await i.deferReply();
-            const tur = i.options.getString('tur') ?? 'gunluk';
+            const tur = i.options.getString('tur') ?? 'toplam';
             const buf = await liderlikGorseli(tur, i.guild);
             if (!buf) return i.editReply('📭 Bu tabloda henüz kayıt yok.');
             return i.editReply({
@@ -810,7 +1122,7 @@ async function komutIsle(i) {
 }
 
 // ==========================================
-// 12) UYARI SİSTEMİ
+// 13) UYARI SİSTEMİ
 // ==========================================
 async function uyariVer(guild, uye, sebep, yetkili) {
     await Warning.create({ guildId: guild.id, userId: uye.id, reason: sebep, byName: yetkili });
@@ -837,7 +1149,7 @@ async function uyariVer(guild, uye, sebep, yetkili) {
 }
 
 // ==========================================
-// 13) SESLİ ÇALIŞMA VE CAM-ONLY
+// 14) SESLİ ÇALIŞMA VE CAM-ONLY
 // ==========================================
 const bekleyenKamera = new Map();
 
@@ -940,7 +1252,6 @@ client.on('voiceStateUpdate', async (eski, yeni) => {
         if (yeniKanal) {
             const ad = await sesKanalAdi(yeni);
             if (ad && normalize(ad) === normalize(AYAR.CAM_ONLY)) {
-                console.log(`⏳ ${uye.user.tag} cam-only'e girdi, ${AYAR.KAMERA_BEKLEME_MS / 1000} sn içinde kamera kontrolü yapılacak.`);
                 const timer = setTimeout(
                     () => kameraKontrol(yeni.guild, userId, yeniKanal),
                     AYAR.KAMERA_BEKLEME_MS
@@ -954,7 +1265,7 @@ client.on('voiceStateUpdate', async (eski, yeni) => {
 });
 
 // ==========================================
-// 14) MESAJ FİLTRELERİ
+// 15) MESAJ FİLTRELERİ
 // ==========================================
 const spamTakip = new Map();
 
@@ -998,7 +1309,7 @@ client.on('messageCreate', async message => {
 });
 
 // ==========================================
-// 15) KARŞILAMA / AYRILMA
+// 16) KARŞILAMA / AYRILMA
 // ==========================================
 client.on('guildMemberAdd', async member => {
     try {
@@ -1023,7 +1334,7 @@ client.on('guildMemberRemove', async member => {
 });
 
 // ==========================================
-// 16) POMODORO ZAMANLAYICISI
+// 17) POMODORO ZAMANLAYICISI
 // ==========================================
 setInterval(async () => {
     try {
@@ -1056,7 +1367,7 @@ setInterval(async () => {
 }, 15000);
 
 // ==========================================
-// 17) ZAMANLANMIŞ GÖREVLER
+// 18) ZAMANLANMIŞ GÖREVLER
 // ==========================================
 const zaman = { timezone: AYAR.SAAT_DILIMI };
 
@@ -1099,44 +1410,9 @@ cron.schedule('0 22 * * 0', async () => {
 }, zaman);
 
 // ==========================================
-// 18) DISCORD GİRİŞİ (teşhis loglu)
+// 19) BAŞLAT
 // ==========================================
-const token = (process.env.DISCORD_TOKEN || '').trim();
-
-// Gateway olaylarını takip et (sadece bağlantıyla ilgili satırlar)
-client.on('debug', m => {
-    if (/gateway|session|heartbeat|identify|hello|websocket|shard/i.test(m)) {
-        console.log('[DEBUG]', m.slice(0, 200));
-    }
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+    console.error('❌ Discord girişi başarısız:', err.message);
+    process.exit(1);
 });
-client.on('invalidated', () => console.error('❌ Oturum geçersiz kılındı (invalidated).'));
-
-(async () => {
-    // 1) HTTP testi: token doğru mu, Discord API'sine ulaşılabiliyor mu?
-    try {
-        const me = await rest.get(Routes.user());
-        console.log(`✅ REST testi başarılı: ${me.username} (token geçerli, Discord API erişilebilir).`);
-    } catch (err) {
-        console.error('❌ REST testi BAŞARISIZ:', err.status ?? '', err.code ?? '', err.message);
-        console.error('   401 ise token yanlış. Diğer hatalarda Render Discord API\'sine ulaşamıyor olabilir.');
-        process.exit(1);
-    }
-
-    // 2) Gateway girişi
-    console.log("⏳ Gateway'e giriş deneniyor...");
-    const watchdog = setTimeout(() => {
-        console.error('❌ 60 sn içinde gateway girişi tamamlanmadı. REST testi çalıştığı için sorun büyük ihtimalle WebSocket (gateway) bağlantısında.');
-    }, 60000);
-
-    try {
-        await client.login(token);
-        clearTimeout(watchdog);
-        console.log('✅ Gateway login isteği kabul edildi.');
-    } catch (err) {
-        clearTimeout(watchdog);
-        console.error('❌ Discord girişi başarısız:', err.code ?? '', err.message);
-        console.error('   4014 ise Developer Portal\'da Message Content ve Server Members Intent açık değil.');
-        process.exit(1);
-    }
-})();
-
