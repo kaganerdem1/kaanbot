@@ -439,6 +439,7 @@ function haftaAnahtari() {
     return dt.toISOString().slice(0, 10);
 }
 
+// Saniyeyi H:MM:SS biçimine çevirir (örn. 3072:12:00)
 function formatSure(saniye) {
     const s = Math.max(0, Math.floor(saniye));
     const h = Math.floor(s / 3600);
@@ -565,23 +566,24 @@ async function eskiVeriyiAktar() {
 // 9) LİDERLİK TABLOSU (resim)
 // ==========================================
 
-// Sadece düz metin karakterleri bırakır (süslü Unicode isimler kutu çıkarmasın diye)
+// Süslü Unicode harfleri (𝒥ℴℴ𝒳) normal harfe çevirir, emojileri ve sembolleri siler
 function temizIsim(s) {
     if (!s) return '';
     return String(s)
         .normalize('NFKD')
-        .replace(/\p{M}/gu, '')                              // aksan işaretlerini kaldır
-        .replace(/[^\p{Script=Latin}\p{N} ._\-|']/gu, '')    // sadece Latin harf, rakam, temel işaret
+        .replace(/\p{M}/gu, '')
+        .replace(/[^\p{L}\p{N} ._\-|'()\[\]]/gu, '')
         .replace(/\s+/g, ' ')
         .trim();
 }
 
-// Görünecek ad: Discord kullanıcı adı → kayıtlı ad → ID'nin son 4 hanesi
+// Eski veriden gelen ad → sunucudaki görünen ad → kullanıcı adı → ID'nin son hanesi
 function gorunenAd(uye, u) {
-    const ad = temizIsim(uye?.user?.username)
-        || temizIsim(u.username)
+    const ad = temizIsim(u.username)
+        || temizIsim(uye?.displayName)
+        || temizIsim(uye?.user?.username)
         || `Kullanici ${String(u.userId).slice(-4)}`;
-    return ad.slice(0, 18);
+    return ad.slice(0, 24);
 }
 
 function siralamaSorgusu(tur) {
@@ -692,6 +694,7 @@ async function liderlikGorseli(tur, guild) {
     ctx.font = '18px sans-serif';
     ctx.fillText(`SERVEUR : ${temizIsim(guild.name) || 'Sunucu'}`, W / 2, 94);
 
+    // Podyum: 2. solda, 1. ortada, 3. sağda
     const podyum = [
         { idx: 1, x: W * 0.22, y: 215, r: 58, renk: '#C0C0C0', etiket: '2ND' },
         { idx: 0, x: W / 2,    y: 200, r: 74, renk: '#F1C40F', etiket: '1ST' },
@@ -721,11 +724,13 @@ async function liderlikGorseli(tur, guild) {
         ctx.font = 'bold 18px sans-serif';
         ctx.fillText(kisi.ad, p.x, p.y + p.r + 56);
 
+        // Podyumda eski botla aynı şekilde: sadece saat sayısı
         ctx.fillStyle = '#DDDDDD';
         ctx.font = '16px sans-serif';
-        ctx.fillText(formatSure(kisi.sure), p.x, p.y + p.r + 78);
+        ctx.fillText(`${Math.floor(kisi.sure / 3600)} saat`, p.x, p.y + p.r + 78);
     }
 
+    // 4. sıradan itibaren liste: sıra, ad, süre (H:MM:SS)
     for (let i = 3; i < veri.length; i++) {
         const kisi = veri[i];
         const y = satirBaslangic + (i - 3) * satirAralik;
