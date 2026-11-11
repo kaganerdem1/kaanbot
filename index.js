@@ -1102,21 +1102,41 @@ cron.schedule('0 22 * * 0', async () => {
 // 18) DISCORD GİRİŞİ (teşhis loglu)
 // ==========================================
 const token = (process.env.DISCORD_TOKEN || '').trim();
-console.log(`🔑 Token uzunluğu: ${token.length} | boşluk var mı: ${/\s/.test(process.env.DISCORD_TOKEN || '')}`);
-console.log("⏳ Discord'a giriş deneniyor...");
 
-const watchdog = setTimeout(() => {
-    console.error('❌ 60 sn içinde Discord girişi tamamlanmadı. Ağ erişimi veya token sorunu olabilir.');
-}, 60000);
+// Gateway olaylarını takip et (sadece bağlantıyla ilgili satırlar)
+client.on('debug', m => {
+    if (/gateway|session|heartbeat|identify|hello|websocket|shard/i.test(m)) {
+        console.log('[DEBUG]', m.slice(0, 200));
+    }
+});
+client.on('invalidated', () => console.error('❌ Oturum geçersiz kılındı (invalidated).'));
 
-client.login(token)
-    .then(() => {
-        clearTimeout(watchdog);
-        console.log('✅ Discord login isteği kabul edildi, gateway bağlantısı bekleniyor...');
-    })
-    .catch(err => {
-        clearTimeout(watchdog);
-        console.error('❌ Discord girişi başarısız:', err.message);
-        console.error('   Token yanlışsa Render Environment\'taki DISCORD_TOKEN\'ı yenile.');
+(async () => {
+    // 1) HTTP testi: token doğru mu, Discord API'sine ulaşılabiliyor mu?
+    try {
+        const me = await rest.get(Routes.user());
+        console.log(`✅ REST testi başarılı: ${me.username} (token geçerli, Discord API erişilebilir).`);
+    } catch (err) {
+        console.error('❌ REST testi BAŞARISIZ:', err.status ?? '', err.code ?? '', err.message);
+        console.error('   401 ise token yanlış. Diğer hatalarda Render Discord API\'sine ulaşamıyor olabilir.');
         process.exit(1);
-    });
+    }
+
+    // 2) Gateway girişi
+    console.log("⏳ Gateway'e giriş deneniyor...");
+    const watchdog = setTimeout(() => {
+        console.error('❌ 60 sn içinde gateway girişi tamamlanmadı. REST testi çalıştığı için sorun büyük ihtimalle WebSocket (gateway) bağlantısında.');
+    }, 60000);
+
+    try {
+        await client.login(token);
+        clearTimeout(watchdog);
+        console.log('✅ Gateway login isteği kabul edildi.');
+    } catch (err) {
+        clearTimeout(watchdog);
+        console.error('❌ Discord girişi başarısız:', err.code ?? '', err.message);
+        console.error('   4014 ise Developer Portal\'da Message Content ve Server Members Intent açık değil.');
+        process.exit(1);
+    }
+})();
+
